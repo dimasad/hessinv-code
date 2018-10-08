@@ -43,32 +43,63 @@ class VanDerPol:
         return symstats.normal_logpdf1(s.x1_meas, s.x1, s.meas_std)
 
 
-def generate_data(model, p, seed=0):
+def sim(model, p):
     def xdot(t, x):
         return model.f(x, [], p)
     x0 = [0, 1]
     tspan = [0, 20]
     sol = integrate.solve_ivp(xdot, tspan, x0, dense_output=True)
     
-    np.random.seed(seed)    
-    meas_std = p[1]
-    
     t = np.linspace(*tspan, 2001)
     x = sol.sol(t).T
-    y = ma.masked_all((t.size, 2))
+    return (t, x)
 
+
+def output(t, x, std, seed=0):
+    np.random.seed(seed)
+    y = ma.masked_all((t.size, 1))
+    
     downsample = 10
     nmeas = y[::downsample].shape[0]
-    y[::downsample, 0] = x[::downsample, 0] + meas_std*np.random.randn(nmeas)
-    return (t, y, x)
+    y[::downsample, 0] = x[::downsample, 0] + std*np.random.randn(nmeas)
+    return (y, downsample)
 
 
 if __name__ == '__main__':
     symb_model = VanDerPol()
     GeneratedVanDerPol = sym2num.model.compile_class(symb_model)
     model = GeneratedVanDerPol()
-
-    p = np.r_[2, 0.1]
-    (t, y, x) = generate_data(model, p)
     
+    mu = 2
+    std = 0.1
+    p = np.r_[mu, std]
+    u = lambda t: np.zeros((t.size, 0))
+    (t, x) = sim(model, p)
+    (y, downsample) = output(t, x, std)
+    
+    problem = oem.Problem(model, t, y, u)
+    tc = problem.tc
+    
+    # Set initial guess
+    dec0 = np.zeros(problem.ndec)
+    x1_guess = interpolate.interp1d(t[::downsample], y[::downsample, 0].T)(tc)
+    problem.set_decision_item('x1', x1_guess, dec0)
+    problem.set_decision_item('meas_std', 0.5, dec0)
+    
+    # Set bounds
+    constr_bounds = np.zeros((2, problem.ncons))
+    dec_L, dec_U = np.repeat([[-np.inf], [np.inf]], problem.ndec, axis=-1)
+    problem.set_decision_item('meas_std', 0.00001, dec_L)
+    problem.set_decision_item('meas_std', 10, dec_U)
+    
+    with problem.ipopt((dec_L, dec_U), constr_bounds) as nlp:
+        nlp.add_num_option('obj_scaling_factor', -1)
+        nlp.add_str_option('linear_solver', 'ma57')
+        nlp.add_num_option('tol', 1e-6)
+        nlp.add_int_option('max_iter', 1000)
+        decopt, info = nlp.solve(dec0)
+    
+    opt = problem.variables(decopt)
+    xopt = opt['x']
+    popt = opt['p']
     
