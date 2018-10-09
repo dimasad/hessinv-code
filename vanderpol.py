@@ -10,7 +10,7 @@ import sympy
 import sym2num.model
 import sym2num.utils
 from numpy import ma
-from scipy import integrate, interpolate, sparse
+from scipy import integrate, interpolate, signal, sparse
 from sym2num import var
 from sympy import cos, sin
 
@@ -70,12 +70,24 @@ def estimate(model, t, y):
     u = lambda t: np.zeros((t.size, 0))
     problem = oem.Problem(model, t, y, u)
     tc = problem.tc
-        
+    
+    # Filter data
+    tm = t[~ma.getmaskarray(y[:, 0])]
+    ym = y.compressed()
+    b, a = signal.butter(2, 0.15)
+    yf = signal.filtfilt(b, a, ym)
+    
     # Set initial guess
     dec0 = np.zeros(problem.ndec)
-    x1_guess = interpolate.interp1d(t[::downsample], y[::downsample, 0])(tc)
-    problem.set_decision_item('x1', x1_guess, dec0)
-    problem.set_decision_item('meas_std', 0.5, dec0)
+    x1 = interpolate.interp1d(tm, yf)(tc)
+    x2 = np.ediff1d(x1, 0)/(t[1] - t[0])
+    x2d = np.ediff1d(signal.filtfilt(b, a, x2), 0)/(t[1] - t[0])
+    mu_guess = np.linalg.lstsq(np.c_[(1 - x1**2)*x2], x2d + x1, rcond=None)[0]
+    std_guess = np.std(ym - yf)
+    problem.set_decision_item('x1', x1, dec0)
+    problem.set_decision_item('x2', x2, dec0)
+    problem.set_decision_item('meas_std', std_guess, dec0)
+    problem.set_decision_item('mu', mu_guess, dec0)
     
     # Set bounds
     constr_bounds = np.zeros((2, problem.ncons))
@@ -89,11 +101,11 @@ def estimate(model, t, y):
         nlp.add_num_option('tol', 1e-6)
         nlp.add_int_option('max_iter', 1000)
         decopt, info = nlp.solve(dec0)
-        
-    HL = lag_hess(problem, decopt, info['mult_g'])
     
     opt = problem.variables(decopt)
-    return problem, opt, decopt, info
+    xopt = opt['x']
+    popt = opt['p']
+    return problem, opt, decopt, info, xopt, popt
 
 
 def lag_hess(problem, d, lmult):
@@ -102,17 +114,35 @@ def lag_hess(problem, d, lmult):
     diag = d2L_dz2_ind[0] == d2L_dz2_ind[1]
     
     d2L_dz2_data = (np.r_[d2L_dz2_val, d2L_dz2_val[~diag]],
-                    np.c_[d2L_dz2_ind, d2L_dz2_ind[~diag, [1,0]]])
+                    np.c_[d2L_dz2_ind, d2L_dz2_ind[::-1, ~diag]])
     d2L_dz2 = sparse.coo_matrix(d2L_dz2_data, (problem.ndec,)*2)
-
+    
     jac_val = problem.constraint_jacobian_val(d)
     jac_ind = problem.constraint_jacobian_ind()
     jac = sparse.coo_matrix((jac_val, jac_ind), (problem.ndec, problem.ncons))
-    jacT = sparse.coo_matrix((jac_val, jac_ind[:,[1,0]]), (problem.ndec, problem.ncons))
+    jacT = jac.transpose()
     
     null = sparse.coo_matrix((problem.ncons,) * 2)
-    lag_hess = sparse.bmat([[d2L_dz2, jac], [jacT, null]], 'csr')
+    lag_hess = sparse.bmat([[d2L_dz2, jac], [jacT, null]], 'csc')
     return lag_hess
+
+
+def est_std(problem, HL):
+    HL_inv = sparse.linalg.factorized(HL)
+    
+    poff = problem.decision['p'].offset
+    i_cols = np.zeros((HL.shape[0], 2))
+    i_cols[[poff, poff+1], [0,1]] = -1    
+    p_cov = HL_inv(i_cols)[poff:poff+2]
+    
+    x_var = np.zeros((1, 2))
+    xoff = problem.decision['x'].offset
+    for k in range(1): #range(problem.tc.size):
+        i_cols = np.zeros((HL.shape[0], 2))
+        i_cols[[xoff, xoff+1], [0,1]] = -1
+        cov = HL_inv(i_cols)[xoff:xoff+2]
+        x_var[k] = np.diag(cov)
+    return p_cov, x_var
 
 
 if __name__ == '__main__':
@@ -133,7 +163,14 @@ if __name__ == '__main__':
     np.savetxt(os.path.join(datadir, 'sim.txt'), np.c_[t,x])
     np.savetxt(os.path.join(datadir, 'param.txt'), p)
     
-    for seed in range(10):
+    for seed in range(10000):
         y = output(t, x, std, downsample, seed)
-        problem, opt, decopt = estimate(model, t, y)
+        problem, opt, decopt, info, xopt, popt = estimate(model, t, y)
+        HL = lag_hess(problem, decopt, info['mult_g'])
+        p_cov, x_var = est_std(problem, HL)
+        
+        np.savetxt(os.path.join(datadir, f'popt-{seed}.txt'), popt)
+        np.savetxt(os.path.join(datadir, f'xopt-{seed}.txt'), xopt)
+        np.savetxt(os.path.join(datadir, f'pcov-{seed}.txt'), p_cov)
+        np.savetxt(os.path.join(datadir, f'xvar-{seed}.txt'), x_var)
         
