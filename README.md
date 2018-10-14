@@ -20,5 +20,5 @@ in the tests:
 [scipy]: http://www.scipy.org/
 [sympy]: http://www.sympy.org/
 [sym2num]: https://github.com/cea-ufmg/sym2num
-[mseipopt] https://github.com/cea-ufmg/mseipopt
-[ceacoest] https://github.com/cea-ufmg/ceacoest
+[mseipopt]: https://github.com/cea-ufmg/mseipopt
+[ceacoest]: https://github.com/cea-ufmg/ceacoest
