@@ -198,4 +198,4 @@ if __name__ == '__main__':
             meas = np.c_[t[::downsample], y.compressed()]
             bounds = np.c_[t, xl, xu]
             np.savetxt(os.path.join(datadir, f'meas-{seed}.txt'), meas)
-            np.savetxt(os.path.join(datadir, f'bounds-{seed}.txt'), meas)
+            np.savetxt(os.path.join(datadir, f'bounds-{seed}.txt'), bounds)
