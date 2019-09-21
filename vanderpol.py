@@ -145,7 +145,23 @@ def est_std(problem, HL):
     return p_cov, x_var
 
 
+def statepath_std(problem, HL):
+    HL_inv = sparse.linalg.factorized(HL)
+    
+    x_std = np.zeros(problem.decision['x'].shape)
+    for k in range(problem.tc.size):
+        xoff = problem.decision['x'].offset + 2*k
+        i_cols = np.zeros((HL.shape[0], 2))
+        i_cols[[xoff, xoff+1], [0,1]] = -1
+        cov = HL_inv(i_cols)[xoff:xoff+2]
+        x_std[k] = np.sqrt(np.diag(cov))
+    
+    return x_std
+
+
 if __name__ == '__main__':
+    sparse.linalg.use_solver(useUmfpack=False)
+    
     symb_model = VanDerPol()
     GeneratedVanDerPol = sym2num.model.compile_class(symb_model)
     model = GeneratedVanDerPol()
@@ -173,4 +189,13 @@ if __name__ == '__main__':
         np.savetxt(os.path.join(datadir, f'xopt-{seed}.txt'), xopt)
         np.savetxt(os.path.join(datadir, f'pcov-{seed}.txt'), p_cov)
         np.savetxt(os.path.join(datadir, f'xvar-{seed}.txt'), x_var)
-        
+
+        if seed == 0:
+            x_std = statepath_std(problem, HL)
+            xl = xopt - 3*x_std
+            xu = xopt + 3*x_std
+            
+            meas = np.c_[t[::downsample], y.compressed()]
+            bounds = np.c_[t, xl, xu]
+            np.savetxt(os.path.join(datadir, f'meas-{seed}.txt'), meas)
+            np.savetxt(os.path.join(datadir, f'bounds-{seed}.txt'), meas)

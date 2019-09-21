@@ -33,8 +33,8 @@ if __name__ == '__main__':
     with open('tbl.txt', 'w') as f:
         print(r'$\mu$', *tblp[0], file=f, sep=', ')
         print(r'$\sigma$', *tblp[1], file=f, sep=', ')
-        print(r'$\chi(0)$', *tblx0[0], file=f, sep=', ')
-        print(r'$\zeta(0)$', *tblx0[1], file=f, sep=', ')
+        print(r'$x_1(0)$', *tblx0[0], file=f, sep=', ')
+        print(r'$x_2(0)$', *tblx0[1], file=f, sep=', ')
 
     np.savetxt('mu_est.txt', popt[:, 0])
     np.savetxt('sigma_est.txt', popt[:, 1])
