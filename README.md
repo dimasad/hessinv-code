@@ -1,4 +1,4 @@
-hessinv-code
+phessinv-code
 ============
 
 Code of "Estimate uncertainties in equality-constrained MAP and maximum 
@@ -8,13 +8,13 @@ to Automatica.
 The scripts have the following dependencies, with the version number used
 in the tests:
 
-- python 3.6.6
-- [numpy] 1.14.5 
-- [scipy] 1.1.0
-- [sympy] 1.3
-- [sym2num] 0.1.dev2
+- python 3.7.3
+- [numpy] 1.16.2
+- [scipy] 1.2.1
+- [sympy] 1.4
+- [sym2num] 0.1.dev4
 - [mseipopt] 0.1.dev1
-- [ceacoest] 0.1.dev4
+- [ceacoest] 0.1.dev6
 
 [numpy]: http://www.numpy.org/
 [scipy]: http://www.scipy.org/
