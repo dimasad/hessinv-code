@@ -123,7 +123,7 @@ if __name__ == '__main__':
     Ts = 0.1
     meas_std = 0.1
     given = {
-        'a': 1, 'b': -1, 'd': 0.2, 'gamma': 0.3, 'sigmad': 0.02, 'dt': dt,
+        'a': 1, 'b': -1, 'd': 0.2, 'gamma': 0.3, 'sigmad': 0.1, 'dt': dt,
         'meas_std': meas_std, 'tf': tf, 'seed': seed, 'Ts': Ts
     }
     

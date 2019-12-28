@@ -147,7 +147,7 @@ if __name__ == '__main__':
     popt = opt['p']
 
     # Save MAP estimates
-    np.savez(f'{data_dir}/map.npz', tc=tc, xopt=xopt, popt=popt)
+    #np.savez(f'{data_dir}/map.npz', tc=tc, xopt=xopt, popt=popt)
 
     # Construct and factorize the Lagrangian Hessian
     HL = lag_hess(problem, decopt, info['mult_g'])
@@ -163,7 +163,7 @@ if __name__ == '__main__':
         x_slice.start + 1
     ]
     nindep = independent.size
-    
+
     # Approximate the covariance matrix of the independent variables
     X = np.zeros((problem.ndec, nindep))
     for j, i in enumerate(independent):
@@ -179,7 +179,7 @@ if __name__ == '__main__':
     cov_compressed = cov_dec[:, independent][independent, :]
     
     # Save the covariance
-    np.savez(f'{data_dir}/map_cov.npz', cov_dec=cov_dec)
+    #np.savez(f'{data_dir}/map_cov.npz', cov_dec=cov_dec)
 
     # Compute the correlation coefficients for plotting
     k = xopt.shape[0] // 2
@@ -199,21 +199,40 @@ if __name__ == '__main__':
     factor = cholmod.cholesky(cov_compressed, beta=0)
     L = factor.L()
     
-    # Sample particles
+    # Run MCMC
     np.random.seed(1)
-    Npart = 10000
-    xpart = np.zeros((Npart,) + xopt.shape)
-    ppart = np.zeros((Npart, model.np))
-    log_weights = np.zeros(Npart)
-    for i in range(Npart):
-        print("particle ", i)
+    Nsamp = 100
+    sg = 3e-2 # Scale gain
+    xchain = np.zeros((Nsamp,) + xopt.shape)
+    pchain = np.zeros((Nsamp, model.np))
+
+    accepted = 0
+    xchain[0] = xopt
+    pchain[0] = popt
+
+    # Initialize chain
+    dec_chain = decopt.copy()
+    dec_chain[independent] += sg * factor.apply_Pt(L * np.random.randn(nindep))
+    dec_bounds[:, independent] = dec_chain[independent]
+    
+    # Solve for dependent variables
+    with problem.ipopt(dec_bounds, constr_bounds) as nlp:
+        nlp.add_str_option('linear_solver', 'ma57')
+        nlp.add_num_option('tol', 1e-6)
+        nlp.add_int_option('max_iter', 100)
+        nlp.set_scaling(-1, dec_scale, constr_scale)
+        dec_chain, info_chain0 = nlp.solve(dec_chain)
+    
+    prev_logdens = info_chain0['obj_val']
+    
+    for i in range(1, Nsamp):
         # Sample perturbations to the mode
-        perturb = np.random.randn(nindep)
-        dec_perturb = decopt.copy()
-        dec_perturb[independent] += factor.apply_Pt(L * perturb)
+        perturb = sg * np.random.randn(nindep)
+        dec_candidate = dec_chain.copy()
+        dec_candidate[independent] += factor.apply_Pt(L * perturb)
         
-        # Fix perturbed decision variables and solve for the dependent
-        dec_bounds[:, independent] = dec_perturb[independent]
+        # Fix candidate decision variables and solve for the dependent
+        dec_bounds[:, independent] = dec_candidate[independent]
         
         # Call NLP solver
         with problem.ipopt(dec_bounds, constr_bounds) as nlp:
@@ -221,26 +240,33 @@ if __name__ == '__main__':
             nlp.add_num_option('tol', 1e-6)
             nlp.add_int_option('max_iter', 100)
             nlp.set_scaling(-1, dec_scale, constr_scale)
-            dec_part, info_part = nlp.solve(dec_perturb)
-           
-        # Save particle
-        var = problem.variables(dec_part)
-        xpart[i] = var['x']
-        ppart[i] = var['p']
+            dec_candidate, info_candidate = nlp.solve(dec_candidate)
         
-        # Get particle weight
-        log_weights[i] = info_part['obj_val'] - opt_merit
-        log_weights[i] += -stats.norm.logpdf(perturb).sum()
+        candidate_logdens = info_candidate['obj_val']
+        aprob = min(1, np.exp(candidate_logdens - prev_logdens))
     
-    # Normalize weights
-    weights = np.exp(log_weights - np.log(Npart) - np.median(log_weights))
-    weights /= weights.sum()
-
-    # Save particles
-    np.savez(f'{data_dir}/pf.npz', xpart=xpart, ppart=ppart, weights=weights)
+        r = np.random.random()
+        if r < aprob:
+            var = problem.variables(dec_chain)
+            xchain[i] = var['x']
+            pchain[i] = var['p']
+            dec_chain = dec_candidate
+            prev_logdens = candidate_logdens
+            accepted += 1
+            print(f"chain step %{i} accepted, r=%{r} prev_ld=%{prev_logdens} "
+                  f"candidate_ld=%{candidate_logdens}")
+        else:
+            xchain[i] = xchain[i - 1]
+            pchain[i] = pchain[i - 1]
+            print(f"chain step {i} rejected, r={r} prev_ld={prev_logdens} "
+                  f"candidate_ld={candidate_logdens}")
+        
+    
+    # Save chain
+    np.savez(f'{data_dir}/chain.npz', xchain=xchain, pchain=pchain)
 
     # Save sigma_y histogram
-    h = np.histogram(ppart[:,-1], bins=30, weights=weights, density=True)
+    h = np.histogram(pchain[:,-1], bins=30, density=True)
     hist_data = np.c_[h[1], np.r_[h[0], 0]]
     np.savetxt(f'{data_dir}/sigma_y_hist.txt', hist_data)
     
