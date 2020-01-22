@@ -12,7 +12,6 @@ import scipy.sparse.linalg
 from scipy import interpolate, sparse, stats
 from sksparse import cholmod
 
-from ceacoest import oem, optim
 from ceacoest.modelling import symstats
 
 import jme
@@ -201,8 +200,8 @@ if __name__ == '__main__':
     
     # Run MCMC
     np.random.seed(1)
-    Nsamp = 100
-    sg = 3e-2 # Scale gain
+    Nsamp = 2000
+    sg = 1.8 / np.sqrt(nindep)
     xchain = np.zeros((Nsamp,) + xopt.shape)
     pchain = np.zeros((Nsamp, model.np))
 
@@ -224,12 +223,24 @@ if __name__ == '__main__':
         dec_chain, info_chain0 = nlp.solve(dec_chain)
     
     prev_logdens = info_chain0['obj_val']
-    
-    for i in range(1, Nsamp):
-        # Sample perturbations to the mode
-        perturb = sg * np.random.randn(nindep)
-        dec_candidate = dec_chain.copy()
-        dec_candidate[independent] += factor.apply_Pt(L * perturb)
+
+    i = 1
+    j = 0
+    steps = 0
+    while i < Nsamp:
+        # Sample perturbations
+        step  = 'Gibbs' if i % 15 else 'MH'
+        
+        if step == 'MH':
+            # Do full Metropolis--Hastings jump
+            perturb = sg * np.random.randn(nindep)
+            dec_candidate = dec_chain.copy()
+            dec_candidate[independent] += factor.apply_Pt(L * perturb)
+        else:
+            # Perform Gibbs jump
+            perturb = 3 * np.random.randn()
+            dec_candidate = dec_chain.copy()
+            dec_candidate[independent[j]] += L[j, j] * perturb
         
         # Fix candidate decision variables and solve for the dependent
         dec_bounds[:, independent] = dec_candidate[independent]
@@ -247,20 +258,29 @@ if __name__ == '__main__':
     
         r = np.random.random()
         if r < aprob:
-            var = problem.variables(dec_chain)
-            xchain[i] = var['x']
-            pchain[i] = var['p']
             dec_chain = dec_candidate
             prev_logdens = candidate_logdens
             accepted += 1
-            print(f"chain step %{i} accepted, r=%{r} prev_ld=%{prev_logdens} "
-                  f"candidate_ld=%{candidate_logdens}")
-        else:
-            xchain[i] = xchain[i - 1]
-            pchain[i] = pchain[i - 1]
-            print(f"chain step {i} rejected, r={r} prev_ld={prev_logdens} "
+            print(f"chain {step} step accepted, r={r} prev_ld={prev_logdens} "
                   f"candidate_ld={candidate_logdens}")
-        
+        else:
+            print(f"chain {step} step rejected, r={r} prev_ld={prev_logdens} "
+                  f"candidate_ld={candidate_logdens}")
+        steps += 1
+        print(f"accepted = {accepted} of {steps}  ({accepted*100/steps}%)")
+
+        if step == 'MH':
+            var = problem.variables(dec_chain)
+            xchain[i] = var['x']
+            pchain[i] = var['p']
+            i += 1
+        else:
+            j = (j + 1) % nindep
+            if j == 0:
+                var = problem.variables(dec_chain)
+                xchain[i] = var['x']
+                pchain[i] = var['p']
+                i += 1
     
     # Save chain
     np.savez(f'{data_dir}/chain.npz', xchain=xchain, pchain=pchain)
