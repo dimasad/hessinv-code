@@ -206,8 +206,6 @@ if __name__ == '__main__':
     pchain = np.zeros((Nsamp, model.np))
 
     accepted = 0
-    xchain[0] = xopt
-    pchain[0] = popt
 
     # Initialize chain
     dec_chain = decopt.copy()
@@ -223,7 +221,10 @@ if __name__ == '__main__':
         dec_chain, info_chain0 = nlp.solve(dec_chain)
     
     prev_logdens = info_chain0['obj_val']
-
+    var = problem.variables(dec_chain)
+    xchain[0] = var['x']
+    pchain[0] = var['p']
+    
     i = 1
     j = 0
     steps = 0
@@ -238,7 +239,7 @@ if __name__ == '__main__':
             dec_candidate[independent] += factor.apply_Pt(L * perturb)
         else:
             # Perform Gibbs jump
-            perturb = 3 * np.random.randn()
+            perturb = 3.2 * np.random.randn()
             dec_candidate = dec_chain.copy()
             dec_candidate[independent[j]] += L[j, j] * perturb
         
@@ -274,6 +275,7 @@ if __name__ == '__main__':
             xchain[i] = var['x']
             pchain[i] = var['p']
             i += 1
+            np.savez(f'{data_dir}/chain.npz', xchain=xchain, pchain=pchain)
         else:
             j = (j + 1) % nindep
             if j == 0:
