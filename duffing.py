@@ -146,7 +146,7 @@ if __name__ == '__main__':
     popt = opt['p']
 
     # Save MAP estimates
-    #np.savez(f'{data_dir}/map.npz', tc=tc, xopt=xopt, popt=popt)
+    np.savez(f'{data_dir}/map.npz', tc=tc, xopt=xopt, popt=popt)
 
     # Construct and factorize the Lagrangian Hessian
     HL = lag_hess(problem, decopt, info['mult_g'])
@@ -178,7 +178,7 @@ if __name__ == '__main__':
     cov_compressed = cov_dec[:, independent][independent, :]
     
     # Save the covariance
-    #np.savez(f'{data_dir}/map_cov.npz', cov_dec=cov_dec)
+    np.savez(f'{data_dir}/map_cov.npz', cov_dec=cov_dec)
 
     # Compute the correlation coefficients for plotting
     k = xopt.shape[0] // 2
