@@ -292,4 +292,6 @@ if __name__ == '__main__':
     hist_data = np.c_[h[1], np.r_[h[0], 0]]
     np.savetxt(f'{data_dir}/sigma_y_hist.txt', hist_data)
     
-
+    # Save estimate time-histories
+    np.savetxt(f'{data_dir}/xmean_chain.txt', np.c_[tc, xchain.mean(0)])
+    np.savetxt(f'{data_dir}/xmap.txt', np.c_[tc, xopt])
